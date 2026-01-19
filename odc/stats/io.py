@@ -769,6 +769,10 @@ def load_with_native_transform(
             getattr(geobox.shape, ax) if chunks.get(ax, -1) == -1 else chunks.get(ax)
             for ax in ("y", "x")
         )
+    
+    # Extract these before the loop
+    transform_code = kw.pop("transform_code", None)
+    area_of_interest = kw.pop("area_of_interest", None)
 
     _xx = []
     # fail if the intended transform not available
@@ -785,8 +789,8 @@ def load_with_native_transform(
         extra_args = choose_transform_path(
             xx.crs,
             geobox.crs,
-            kw.pop("transform_code", None),
-            kw.pop("area_of_interest", None),
+            transform_code,
+            area_of_interest,
         )
         extra_args.update(kw)
 
@@ -821,12 +825,17 @@ def load_with_native_transform(
         elif vars_to_scale:
             _yy = _yy.assign(**{var: _yy[var] > 64 for var in vars_to_scale})
 
+        # normalize output type before appending
+        if isinstance(_yy, xr.DataArray):
+            _yy = _yy.to_dataset(name=_yy.name or "band")
+
         _xx += [_yy]
 
     if len(_xx) == 1:
         xx = _xx[0]
     else:
-        xx = xr.concat(_xx, _xx[0].dims[0])  # type: ignore
+        first_dim = list(_xx[0].sizes.keys())[0]
+        xx = xr.concat(_xx, dim=first_dim) # type: ignore
         if groupby != "idx":
             xx = xx.groupby(groupby).map(fuser)
     # TODO: probably want to replace spec MultiIndex with just `time` component
