@@ -19,6 +19,7 @@ from ._text import split_and_check
 from pystac.extensions.projection import ProjectionExtension
 from toolz import dicttoolz
 from rasterio.crs import CRS
+from rasterio.transform import Affine 
 import warnings
 
 from eodatasets3.assemble import DatasetAssembler, serialise, _validate_property_name
@@ -528,8 +529,13 @@ class Task:
         )
         ProjectionExtension.add_to(item)
         proj_ext = ProjectionExtension.ext(item)
+
+        transform = geobox.transform
+        if isinstance(transform, Affine):
+            transform = geobox.transform.to_gdal()
+
         proj_ext.apply(
-            epsg=geobox.crs.epsg, transform=geobox.transform, shape=list(geobox.shape)
+            epsg=geobox.crs.epsg, transform=transform, shape=list(geobox.shape)
         )
 
         # Lineage last

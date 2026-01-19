@@ -65,7 +65,7 @@ DEFAULT_COG_OPTS = {
 
 
 def dump_json(meta: dict[str, Any]) -> str:
-    return json.dumps(meta, separators=(",", ":"))
+    return json.dumps(meta, separators=(",", ":"), default=json_fallback)
 
 
 def mk_sha1(data):
