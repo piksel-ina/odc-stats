@@ -1,5 +1,6 @@
 import json
 
+from pathlib import Path
 import click
 import sys
 import logging
@@ -83,6 +84,9 @@ SUPPORTED_FREQUENCY = [
     "--tiles", help='Limit query to tiles example: "0:3,2:4"', callback=click_range2d
 )
 @click.option(
+    "--tilelist", help='Limit query to a list of tiles provided in a csv'
+)
+@click.option(
     "--debug",
     is_flag=True,
     default=False,
@@ -139,6 +143,7 @@ def save_tasks(
     complevel,
     overwrite,
     tiles=None,
+    tilelist=None,
     debug=False,
     gqa=None,
     usgs_collection_category=None,
@@ -277,6 +282,20 @@ def save_tasks(
     if dataset_filter:
         ds_filter = json.loads(dataset_filter)
 
+    list_of_tiles = None
+    if tilelist is not None:
+        def load_tilelist(tilelist: str | Path) -> list[tuple[int, int]]:
+            tiles: list[tuple[int, int]] = []
+            with open(tilelist, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line: continue
+                    x, y = map(int, line.split(","))
+                    tiles.append((x, y))
+            return tiles
+        list_of_tiles = load_tilelist(tilelist)
+
+
     dc = Datacube(env=env)
     try:
         ok = tasks.save(
@@ -285,6 +304,7 @@ def save_tasks(
             dataset_filter=ds_filter,
             temporal_range=temporal_range,
             tiles=tiles,
+            list_of_tiles=list_of_tiles,
             predicate=predicate,
             debug=debug,
             ignore_time=ignore_time,
