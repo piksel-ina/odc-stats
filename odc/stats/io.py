@@ -249,7 +249,7 @@ class S3COGSink:
                     tuple(dv.shape),
                     str(dv.dtype),
                 )
-
+                
             cog_opts = self.cog_opts(band)
             cog_bytes = to_cog(dv, **cog_opts)
             out.append(self._write_blob(cog_bytes, url, ContentType="image/tiff"))
@@ -393,6 +393,16 @@ class S3COGSink:
         meta_sha1 = dask.delayed(WriteResult(json_url, mk_sha1(json_data), None))
 
         paths = task.paths("absolute", ext=self._band_ext)
+
+        _log.warning(
+            "TASK geobox crs=%s epsg=%s",
+            str(task.geobox.crs),
+            task.geobox.crs.to_epsg() if task.geobox.crs is not None else None,
+        )
+        _log.warning("DS vars=%s", list(ds.data_vars))
+        _log.warning("AUX vars=%s", None if aux is None else list(aux.data_vars))
+
+
         cogs = self._ds_to_cog(ds, paths)
 
         if aux is not None:
@@ -831,6 +841,12 @@ def load_with_native_transform(
             yy = yy.assign(
                 **{var: yy[var].astype("uint8") << 7 for var in vars_to_scale}
             )
+
+        _log.warning(
+            "REPROJECT src_crs=%s dst_crs=%s",
+            str(xx.crs),
+            str(geobox.crs),
+        )
 
         _yy = xr_reproject(
             yy,
