@@ -224,6 +224,32 @@ class S3COGSink:
             url = paths.get(band, None)
             if url is None:
                 raise ValueError(f"No path for band: '{band}'")
+
+            try:
+                gbox = dv.odc.geobox  # type: ignore[attr-defined]
+                _log.warning(
+                    "WRITE COG band=%s url=%s odc.crs=%s epsg=%s transform=%s shape=%s dtype=%s",
+                    band,
+                    url,
+                    str(gbox.crs),
+                    gbox.crs.to_epsg() if gbox.crs is not None else None,
+                    gbox.transform,
+                    tuple(dv.shape),
+                    str(dv.dtype),
+                )
+            except Exception as e:
+                _log.warning(
+                    "WRITE COG band=%s url=%s NO odc.geobox (%s). attrs.crs=%r coords=%s dims=%s shape=%s dtype=%s",
+                    band,
+                    url,
+                    e,
+                    dv.attrs.get("crs", None),
+                    list(dv.coords),
+                    dv.dims,
+                    tuple(dv.shape),
+                    str(dv.dtype),
+                )
+
             cog_opts = self.cog_opts(band)
             cog_bytes = to_cog(dv, **cog_opts)
             out.append(self._write_blob(cog_bytes, url, ContentType="image/tiff"))
