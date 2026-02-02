@@ -34,6 +34,7 @@ from pyproj import aoi, transformer
 from odc.geo.geobox import GeoBox
 from odc.geo.geobox import pad as gbox_pad
 from odc.geo.xr import xr_reproject
+from odc.geo.xr import assign_crs
 
 from ._grouper import group_by_nothing, solar_offset
 from odc.algo._masking import (
@@ -855,6 +856,27 @@ def load_with_native_transform(
             chunks=_chunks,
             **extra_args,
         )
+
+        # Add debug logging
+        _log.warning("AFTER REPROJECT: vars=%s", list(_yy.data_vars))
+        _log.warning("Target geobox: crs=%s", geobox.crs)
+        for var in _yy.data_vars:
+            try:
+                var_geobox = _yy[var].odc.geobox
+                _log.warning("  var=%s has crs=%s", var, var_geobox.crs)
+            except Exception as e:
+                _log.warning("  var=%s has no geobox: %s", var, e)
+
+        # Force assign the correct CRS to the reprojected data
+        _yy = assign_crs(_yy, crs=geobox.crs)
+        
+        _log.warning("AFTER ASSIGN_CRS:")
+        for var in _yy.data_vars:
+            try:
+                var_geobox = _yy[var].odc.geobox
+                _log.warning("  var=%s has crs=%s", var, var_geobox.crs)
+            except Exception as e:
+                _log.warning("  var=%s has no geobox: %s", var, e)
 
         if isinstance(_yy, xr.DataArray) and vars_to_scale:
             _yy = _yy > 64
