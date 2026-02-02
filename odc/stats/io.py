@@ -33,8 +33,7 @@ from pyproj import aoi, transformer
 
 from odc.geo.geobox import GeoBox
 from odc.geo.geobox import pad as gbox_pad
-from odc.geo.xr import xr_reproject
-from odc.geo.xr import assign_crs
+from odc.geo.xr import xr_reproject, assign_crs
 
 from ._grouper import group_by_nothing, solar_offset
 from odc.algo._masking import (
@@ -849,6 +848,21 @@ def load_with_native_transform(
             str(geobox.crs),
         )
 
+        # Remove stale CRS/grid-mapping metadata BEFORE reproject
+        if isinstance(yy, xr.DataArray):
+            yy = yy.copy()
+            yy.attrs.pop("grid_mapping", None)
+        else:
+            yy = yy.copy()
+            for v in yy.data_vars:
+                yy[v].attrs.pop("grid_mapping", None)
+            for name in ("spatial_ref", "crs"):
+                if name in yy.variables:
+                    yy = yy.drop_vars(name)
+
+        _log.warning("x[0:2]=%s", _yy.coords["x"].values[:2])
+        _log.warning("y[0:2]=%s", _yy.coords["y"].values[:2])
+
         _yy = xr_reproject(
             yy,
             geobox,
@@ -857,26 +871,13 @@ def load_with_native_transform(
             **extra_args,
         )
 
-        # Add debug logging
-        _log.warning("AFTER REPROJECT: vars=%s", list(_yy.data_vars))
-        _log.warning("Target geobox: crs=%s", geobox.crs)
-        for var in _yy.data_vars:
-            try:
-                var_geobox = _yy[var].odc.geobox
-                _log.warning("  var=%s has crs=%s", var, var_geobox.crs)
-            except Exception as e:
-                _log.warning("  var=%s has no geobox: %s", var, e)
-
-        # Force assign the correct CRS to the reprojected data
+        # Ensure output advertises the destination CRS consistently
         _yy = assign_crs(_yy, crs=geobox.crs)
-        
-        _log.warning("AFTER ASSIGN_CRS:")
-        for var in _yy.data_vars:
-            try:
-                var_geobox = _yy[var].odc.geobox
-                _log.warning("  var=%s has crs=%s", var, var_geobox.crs)
-            except Exception as e:
-                _log.warning("  var=%s has no geobox: %s", var, e)
+
+        # Add debug logging
+        _log.warning("x[0:2]=%s", _yy.coords["x"].values[:2])
+        _log.warning("y[0:2]=%s", _yy.coords["y"].values[:2])
+
 
         if isinstance(_yy, xr.DataArray) and vars_to_scale:
             _yy = _yy > 64
