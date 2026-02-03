@@ -235,6 +235,9 @@ class S3COGSink:
                 list(dv.coords),
             )
 
+            _log.warning("PRE-WRITE: ds.odc.crs=%s", getattr(ds.odc, "crs", None))
+            _log.warning("PRE-WRITE: ds vars has spatial_ref=%s", "spatial_ref" in ds.variables)
+
             try:
                 gbox = dv.odc.geobox  # type: ignore[attr-defined]
                 _log.warning(
@@ -913,6 +916,17 @@ def load_with_native_transform(
         if groupby != "idx":
             xx = xx.groupby(groupby).map(fuser)
     # TODO: probably want to replace spec MultiIndex with just `time` component
+
+    if isinstance(xx, xr.Dataset):
+        for v in xx.data_vars:
+            xx[v].attrs.pop("crs", None)
+            xx[v].attrs.pop("grid_mapping", None)
+        for name in ("spatial_ref", "crs"):
+            if name in xx.variables:
+                xx = xx.drop_vars(name)
+
+    xx = assign_crs(xx, crs=geobox.crs)
+
     return xx
 
 
