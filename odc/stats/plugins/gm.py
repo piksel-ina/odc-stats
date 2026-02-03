@@ -14,18 +14,22 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-def _log_crs(stage: str, ds: xr.Dataset) -> None:
+def _log_crs(stage: str, obj: xr.Dataset | xr.DataArray) -> None:
     try:
-        crs = getattr(ds.odc, "crs", None)  # type: ignore[attr-defined]
+        crs = getattr(obj.odc, "crs", None)  # type: ignore[attr-defined]
+        epsg = getattr(crs, "epsg", None)
+        crs_s = f"EPSG:{epsg}" if epsg is not None else ("None" if crs is None else "<non-epsg>")
     except Exception as e:
-        crs = f"<odc.crs error: {e}>"
-    _log.warning(
-        "PLUGIN CRS stage=%s ds.odc.crs=%s has_spatial_ref=%s vars=%s",
-        stage,
-        crs,
-        ("spatial_ref" in ds.variables),
-        list(ds.data_vars),
-    )
+        crs_s = f"<odc.crs err {type(e).__name__}>"
+
+    if isinstance(obj, xr.DataArray):
+        has_sr = ("spatial_ref" in obj.coords) or ("spatial_ref" in obj.variables)
+        gm = obj.attrs.get("grid_mapping", None)
+        _log.warning("CRS %s DA crs=%s sr=%s gm=%s", stage, crs_s, has_sr, gm)
+    else:
+        has_sr = "spatial_ref" in obj.variables
+        nvars = len(obj.data_vars)
+        _log.warning("CRS %s DS crs=%s sr=%s nvars=%d", stage, crs_s, has_sr, nvars)
 
 
 class StatsGM(StatsPluginInterface):

@@ -63,6 +63,23 @@ DEFAULT_COG_OPTS = {
     "blocksize": 512,
 }
 
+def _log_crs(stage: str, obj: xr.Dataset | xr.DataArray) -> None:
+    try:
+        crs = getattr(obj.odc, "crs", None)  # type: ignore[attr-defined]
+        epsg = getattr(crs, "epsg", None)
+        crs_s = f"EPSG:{epsg}" if epsg is not None else ("None" if crs is None else "<non-epsg>")
+    except Exception as e:
+        crs_s = f"<odc.crs err {type(e).__name__}>"
+
+    if isinstance(obj, xr.DataArray):
+        has_sr = ("spatial_ref" in obj.coords) or ("spatial_ref" in obj.variables)
+        gm = obj.attrs.get("grid_mapping", None)
+        _log.warning("CRS %s DA crs=%s sr=%s gm=%s", stage, crs_s, has_sr, gm)
+    else:
+        has_sr = "spatial_ref" in obj.variables
+        nvars = len(obj.data_vars)
+        _log.warning("CRS %s DS crs=%s sr=%s nvars=%d", stage, crs_s, has_sr, nvars)
+
 
 def dump_json(meta: dict[str, Any]) -> str:
     return json.dumps(meta, separators=(",", ":"))
@@ -219,54 +236,18 @@ class S3COGSink:
     # pylint: enable=invalid-name
     def _ds_to_cog(self, ds: xr.Dataset, paths: dict[str, str]) -> list[Delayed]:
         out = []
+        _log_crs("_ds_to_cog:in", ds)
         for band, dv in ds.data_vars.items():
             band = str(band)
             url = paths.get(band, None)
             if url is None:
-                raise ValueError(f"No path for band: '{band}'")
-
-            # log per-band CRS too
-            _log.warning(
-                "PRE-WRITE band=%s dv.odc.crs=%s grid_mapping=%r has_spatial_ref=%s coords=%s",
-                band,
-                getattr(dv.odc, "crs", None),  # type: ignore[attr-defined]
-                dv.attrs.get("grid_mapping", None),
-                ("spatial_ref" in ds.variables),
-                list(dv.coords),
-            )
-
-            _log.warning("PRE-WRITE: ds.odc.crs=%s", getattr(ds.odc, "crs", None))
-            _log.warning("PRE-WRITE: ds vars has spatial_ref=%s", "spatial_ref" in ds.variables)
-
-            try:
-                gbox = dv.odc.geobox  # type: ignore[attr-defined]
-                _log.warning(
-                    "WRITE COG band=%s url=%s odc.crs=%s epsg=%s transform=%s shape=%s dtype=%s",
-                    band,
-                    url,
-                    str(gbox.crs),
-                    gbox.crs.to_epsg() if gbox.crs is not None else None,
-                    gbox.transform,
-                    tuple(dv.shape),
-                    str(dv.dtype),
-                )
-            except Exception as e:
-                _log.warning(
-                    "WRITE COG band=%s url=%s NO odc.geobox (%s). attrs.crs=%r coords=%s dims=%s shape=%s dtype=%s",
-                    band,
-                    url,
-                    e,
-                    dv.attrs.get("crs", None),
-                    list(dv.coords),
-                    dv.dims,
-                    tuple(dv.shape),
-                    str(dv.dtype),
-                )
-
-                
+                raise ValueError(f"No path for band: '{band}'")         
             cog_opts = self.cog_opts(band)
             cog_bytes = to_cog(dv, **cog_opts)
             out.append(self._write_blob(cog_bytes, url, ContentType="image/tiff"))
+        
+        _log.debug("_ds_to_cog:out wrote_bands=%d", len(out))
+        _log_crs("_ds_to_cog:out", ds)
         return out
 
     def _apply_color_ramp(
@@ -395,6 +376,9 @@ class S3COGSink:
         """
         Dump files with STAC metadata file, which generated from PySTAC
         """
+        
+        _log_crs("_dump_with_pystac:in", ds)
+
         json_url = task.metadata_path("absolute", ext=self._stac_meta_ext)
         meta = task.render_metadata(
             ext=self._band_ext, use_center_time=getattr(proc, "CENTER_TIMERANGE", False)
@@ -407,15 +391,6 @@ class S3COGSink:
         meta_sha1 = dask.delayed(WriteResult(json_url, mk_sha1(json_data), None))
 
         paths = task.paths("absolute", ext=self._band_ext)
-
-        _log.warning(
-            "TASK geobox crs=%s epsg=%s",
-            str(task.geobox.crs),
-            task.geobox.crs.to_epsg() if task.geobox.crs is not None else None,
-        )
-        _log.warning("DS vars=%s", list(ds.data_vars))
-        _log.warning("AUX vars=%s", None if aux is None else list(aux.data_vars))
-
 
         cogs = self._ds_to_cog(ds, paths)
 
@@ -830,6 +805,7 @@ def load_with_native_transform(
         load_chunks=load_chunks,
         pad=pad,
     ):
+        _log_crs("native_load:out", xx)
         extra_args = choose_transform_path(
             xx.crs,
             geobox.crs,
@@ -844,6 +820,7 @@ def load_with_native_transform(
             groupby=groupby,
             fuser=fuser,
         )
+        _log_crs("native_transform:out", yy)
 
         vars_to_scale = False
         if isinstance(yy, xr.DataArray):
@@ -856,27 +833,17 @@ def load_with_native_transform(
                 **{var: yy[var].astype("uint8") << 7 for var in vars_to_scale}
             )
 
-        _log.warning(
-            "REPROJECT src_crs=%s dst_crs=%s",
-            str(xx.crs),
-            str(geobox.crs),
-        )
-
         # Remove stale CRS/grid-mapping metadata BEFORE reproject
-        if isinstance(yy, xr.DataArray):
-            yy = yy.copy()
-            yy.attrs.pop("grid_mapping", None)
-        else:
-            yy = yy.copy()
-            for v in yy.data_vars:
-                yy[v].attrs.pop("grid_mapping", None)
-            for name in ("spatial_ref", "crs"):
-                if name in yy.variables:
-                    yy = yy.drop_vars(name)
+        # if isinstance(yy, xr.DataArray):
+        #     yy = yy.copy()
+        #     yy.attrs.pop("grid_mapping", None)
+        # else:
+        #     yy = yy.copy()
+        #     for v in yy.data_vars:
+        #         yy[v].attrs.pop("grid_mapping", None)
+        #     yy = yy.drop_vars(["spatial_ref", "crs"], errors="ignore")
 
-        if "x" in yy.coords and "y" in yy.coords:
-            _log.warning("SRC x[0:2]=%s", yy.coords["x"].values[:2])
-            _log.warning("SRC y[0:2]=%s", yy.coords["y"].values[:2])
+        _log_crs("pre_reproject", yy)
 
         _yy = xr_reproject(
             yy,
@@ -886,19 +853,9 @@ def load_with_native_transform(
             **extra_args,
         )
 
-
         # Ensure output advertises the destination CRS consistently
-        _yy = assign_crs(_yy, crs=geobox.crs)
-
-        # log after warp (should match geobox grid)
-        if "x" in _yy.coords and "y" in _yy.coords:
-            _log.warning("DST x[0:2]=%s", _yy.coords["x"].values[:2])
-            _log.warning("DST y[0:2]=%s", _yy.coords["y"].values[:2])
-
-        _log.warning("POST assign_crs: ds.odc.crs=%s", getattr(_yy.odc, "crs", None))
-        band0 = list(_yy.data_vars)[0]
-        _log.warning("POST assign_crs: %s.odc.crs=%s", band0, getattr(_yy[band0].odc, "crs", None))
-
+        # _yy = assign_crs(_yy, crs=geobox.crs)
+        _log_crs("post_reproject", _yy)
 
         if isinstance(_yy, xr.DataArray) and vars_to_scale:
             _yy = _yy > 64
@@ -916,17 +873,8 @@ def load_with_native_transform(
         if groupby != "idx":
             xx = xx.groupby(groupby).map(fuser)
     # TODO: probably want to replace spec MultiIndex with just `time` component
-
-    if isinstance(xx, xr.Dataset):
-        for v in xx.data_vars:
-            xx[v].attrs.pop("crs", None)
-            xx[v].attrs.pop("grid_mapping", None)
-        for name in ("spatial_ref", "crs"):
-            if name in xx.variables:
-                xx = xx.drop_vars(name)
-
-    xx = assign_crs(xx, crs=geobox.crs)
-
+    # xx = assign_crs(xx, crs=geobox.crs)
+    _log_crs("load_with_native_transform:out", xx)
     return xx
 
 
