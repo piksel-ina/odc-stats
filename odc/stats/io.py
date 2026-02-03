@@ -854,7 +854,7 @@ def load_with_native_transform(
         )
 
         # Ensure output advertises the destination CRS consistently
-        # _yy = assign_crs(_yy, crs=geobox.crs)
+        _yy = assign_crs(_yy, crs=geobox.crs)
         _log_crs("post_reproject", _yy)
 
         if isinstance(_yy, xr.DataArray) and vars_to_scale:
