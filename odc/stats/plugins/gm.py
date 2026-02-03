@@ -12,6 +12,19 @@ import logging
 
 _log = logging.getLogger(__name__)
 
+def _log_crs(stage: str, ds: xr.Dataset) -> None:
+    try:
+        crs = getattr(ds.odc, "crs", None)  # type: ignore[attr-defined]
+    except Exception as e:
+        crs = f"<odc.crs error: {e}>"
+    _log.warning(
+        "PLUGIN CRS stage=%s ds.odc.crs=%s has_spatial_ref=%s vars=%s",
+        stage,
+        crs,
+        ("spatial_ref" in ds.variables),
+        list(ds.data_vars),
+    )
+
 
 class StatsGM(StatsPluginInterface):
     NAME = "gm"
@@ -76,6 +89,8 @@ class StatsGM(StatsPluginInterface):
         return self.bands + self.aux_bands
 
     def native_transform(self, xx: xr.Dataset) -> xr.Dataset:
+        _log_crs("native_transform:in", xx)
+
         if self._mask_band not in xx.data_vars:
             return xx
 
@@ -104,9 +119,11 @@ class StatsGM(StatsPluginInterface):
         else:
             xx = xx.drop_vars([self._mask_band])
         xx = erase_bad(xx, bad)
+        _log_crs("native_transform:out", xx)
         return xx
 
     def reduce(self, xx: xr.Dataset) -> xr.Dataset:
+        _log_crs("reduce:in", xx)
         scale = 1 / 10_000
         cfg = {
             "maxiters": 1000,
@@ -123,6 +140,7 @@ class StatsGM(StatsPluginInterface):
         gm = geomedian_with_mads(xx, **cfg)
         gm = gm.rename(self._renames)
 
+        _log_crs("reduce:out", gm)
         return gm
 
 
