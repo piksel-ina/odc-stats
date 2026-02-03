@@ -860,8 +860,9 @@ def load_with_native_transform(
                 if name in yy.variables:
                     yy = yy.drop_vars(name)
 
-        _log.warning("x[0:2]=%s", _yy.coords["x"].values[:2])
-        _log.warning("y[0:2]=%s", _yy.coords["y"].values[:2])
+        if "x" in yy.coords and "y" in yy.coords:
+            _log.warning("SRC x[0:2]=%s", yy.coords["x"].values[:2])
+            _log.warning("SRC y[0:2]=%s", yy.coords["y"].values[:2])
 
         _yy = xr_reproject(
             yy,
@@ -871,13 +872,13 @@ def load_with_native_transform(
             **extra_args,
         )
 
+        # log after warp (should match geobox grid)
+        if "x" in _yy.coords and "y" in _yy.coords:
+            _log.warning("DST x[0:2]=%s", _yy.coords["x"].values[:2])
+            _log.warning("DST y[0:2]=%s", _yy.coords["y"].values[:2])
+
         # Ensure output advertises the destination CRS consistently
         _yy = assign_crs(_yy, crs=geobox.crs)
-
-        # Add debug logging
-        _log.warning("x[0:2]=%s", _yy.coords["x"].values[:2])
-        _log.warning("y[0:2]=%s", _yy.coords["y"].values[:2])
-
 
         if isinstance(_yy, xr.DataArray) and vars_to_scale:
             _yy = _yy > 64
