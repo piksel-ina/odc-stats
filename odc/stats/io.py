@@ -225,6 +225,16 @@ class S3COGSink:
             if url is None:
                 raise ValueError(f"No path for band: '{band}'")
 
+            # log per-band CRS too
+            _log.warning(
+                "PRE-WRITE band=%s dv.odc.crs=%s grid_mapping=%r has_spatial_ref=%s coords=%s",
+                band,
+                getattr(dv.odc, "crs", None),  # type: ignore[attr-defined]
+                dv.attrs.get("grid_mapping", None),
+                ("spatial_ref" in ds.variables),
+                list(dv.coords),
+            )
+
             try:
                 gbox = dv.odc.geobox  # type: ignore[attr-defined]
                 _log.warning(
@@ -249,6 +259,7 @@ class S3COGSink:
                     tuple(dv.shape),
                     str(dv.dtype),
                 )
+
                 
             cog_opts = self.cog_opts(band)
             cog_bytes = to_cog(dv, **cog_opts)
@@ -872,13 +883,19 @@ def load_with_native_transform(
             **extra_args,
         )
 
+
+        # Ensure output advertises the destination CRS consistently
+        _yy = assign_crs(_yy, crs=geobox.crs)
+
         # log after warp (should match geobox grid)
         if "x" in _yy.coords and "y" in _yy.coords:
             _log.warning("DST x[0:2]=%s", _yy.coords["x"].values[:2])
             _log.warning("DST y[0:2]=%s", _yy.coords["y"].values[:2])
 
-        # Ensure output advertises the destination CRS consistently
-        _yy = assign_crs(_yy, crs=geobox.crs)
+        _log.warning("POST assign_crs: ds.odc.crs=%s", getattr(_yy.odc, "crs", None))
+        band0 = list(_yy.data_vars)[0]
+        _log.warning("POST assign_crs: %s.odc.crs=%s", band0, getattr(_yy[band0].odc, "crs", None))
+
 
         if isinstance(_yy, xr.DataArray) and vars_to_scale:
             _yy = _yy > 64
