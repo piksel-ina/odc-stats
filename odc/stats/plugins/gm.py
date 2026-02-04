@@ -147,19 +147,19 @@ class StatsGM(StatsPluginInterface):
         gm = gm.rename(self._renames)
 
         # # --- geomedian_with_mads drops spatial_ref; re-attach from input ---
-        crs = getattr(xx.odc, "crs", None)  # type: ignore[attr-defined]
-        if crs is not None:
-            gm = gm.copy()
+        # crs = getattr(xx.odc, "crs", None)  # type: ignore[attr-defined]
+        # if crs is not None:
+        #     gm = gm.copy()
             
-            # Remove stale CRS metadata
-            gm.attrs.pop("crs", None)
-            gm.attrs.pop("grid_mapping", None)
-            for v in gm.data_vars:
-                gm[v].attrs.pop("crs", None)
-                gm[v].attrs.pop("grid_mapping", None)
+        #     # Remove stale CRS metadata
+        #     gm.attrs.pop("crs", None)
+        #     gm.attrs.pop("grid_mapping", None)
+        #     for v in gm.data_vars:
+        #         gm[v].attrs.pop("crs", None)
+        #         gm[v].attrs.pop("grid_mapping", None)
             
-            gm = gm.drop_vars(["spatial_ref", "crs"], errors="ignore")
-            gm = assign_crs(gm, crs=crs)
+        #     gm = gm.drop_vars(["spatial_ref", "crs"], errors="ignore")
+        #     gm = assign_crs(gm, crs=crs)
 
         _log_crs("reduce:out", gm)
         return gm

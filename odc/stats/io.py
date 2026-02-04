@@ -78,7 +78,31 @@ def _log_crs(stage: str, obj: xr.Dataset | xr.DataArray) -> None:
     else:
         has_sr = "spatial_ref" in obj.variables
         nvars = len(obj.data_vars)
-        _log.warning("CRS %s DS crs=%s sr=%s nvars=%d", stage, crs_s, has_sr, nvars)
+        _log.warning("CRS %s DS crs=%s sr=%s nvars=%d", stage, crs_s, has_sr, nvars)\
+
+def _log_xy(stage: str, obj: xr.Dataset | xr.DataArray) -> None:
+    # get a representative DataArray to read coords from
+    da = obj if isinstance(obj, xr.DataArray) else next(iter(obj.data_vars.values()))
+
+    if "x" not in da.coords or "y" not in da.coords:
+        _log.warning("%s: no x/y coords (coords=%s)", stage, list(da.coords))
+        return
+
+    x = da.coords["x"].values
+    y = da.coords["y"].values
+
+    # basic stats (assumes 1D coords)
+    dx = float(x[1] - x[0]) if x.shape[0] > 1 else float("nan")
+    dy = float(y[1] - y[0]) if y.shape[0] > 1 else float("nan")
+
+    _log.warning(
+        "%s: nx=%d ny=%d x=[%.6g..%.6g] dx=%.6g units=%s | y=[%.6g..%.6g] dy=%.6g units=%s",
+        stage,
+        x.shape[0], y.shape[0],
+        float(x[0]), float(x[-1]), dx, da.x.attrs.get("units"),
+        float(y[0]), float(y[-1]), dy, da.y.attrs.get("units"),
+    )
+
 
 
 def dump_json(meta: dict[str, Any]) -> str:
@@ -833,17 +857,8 @@ def load_with_native_transform(
                 **{var: yy[var].astype("uint8") << 7 for var in vars_to_scale}
             )
 
-        # Remove stale CRS/grid-mapping metadata BEFORE reproject
-        # if isinstance(yy, xr.DataArray):
-        #     yy = yy.copy()
-        #     yy.attrs.pop("grid_mapping", None)
-        # else:
-        #     yy = yy.copy()
-        #     for v in yy.data_vars:
-        #         yy[v].attrs.pop("grid_mapping", None)
-        #     yy = yy.drop_vars(["spatial_ref", "crs"], errors="ignore")
-
         _log_crs("pre_reproject", yy)
+        _log_xy("pre_reproject", yy)
 
         _yy = xr_reproject(
             yy,
@@ -854,8 +869,9 @@ def load_with_native_transform(
         )
 
         # Ensure output advertises the destination CRS consistently
-        _yy = assign_crs(_yy, crs=geobox.crs)
+        # _yy = assign_crs(_yy, crs=geobox.crs)
         _log_crs("post_reproject", _yy)
+        _log_xy("post_reproject", _yy)
 
         if isinstance(_yy, xr.DataArray) and vars_to_scale:
             _yy = _yy > 64
@@ -873,7 +889,6 @@ def load_with_native_transform(
         if groupby != "idx":
             xx = xx.groupby(groupby).map(fuser)
     # TODO: probably want to replace spec MultiIndex with just `time` component
-    # xx = assign_crs(xx, crs=geobox.crs)
     _log_crs("load_with_native_transform:out", xx)
     return xx
 
