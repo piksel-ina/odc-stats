@@ -869,7 +869,7 @@ def load_with_native_transform(
         )
 
         # Ensure output advertises the destination CRS consistently
-        # _yy = assign_crs(_yy, crs=geobox.crs)
+        _yy = assign_crs(_yy, crs=geobox.crs)
         _log_crs("post_reproject", _yy)
         _log_xy("post_reproject", _yy)
 
