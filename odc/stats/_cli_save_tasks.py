@@ -83,9 +83,7 @@ SUPPORTED_FREQUENCY = [
 @click.option(
     "--tiles", help='Limit query to tiles example: "0:3,2:4"', callback=click_range2d
 )
-@click.option(
-    "--tilelist", help='Limit query to a list of tiles provided in a csv'
-)
+@click.option("--tilelist", help="Limit query to a list of tiles provided in a csv")
 @click.option(
     "--debug",
     is_flag=True,
@@ -130,7 +128,7 @@ SUPPORTED_FREQUENCY = [
 @click.argument("output", type=str, nargs=1, default="")
 # pylint: disable=too-many-arguments, too-many-locals
 # pylint: disable=too-many-branches, too-many-statements
-def save_tasks(
+def save_tasks(  # pylint: disable=too-many-positional-arguments
     config,
     grid,
     year,
@@ -284,17 +282,19 @@ def save_tasks(
 
     list_of_tiles = None
     if tilelist is not None:
-        def load_tilelist(tilelist: str | Path) -> list[tuple[int, int]]:
-            tiles: list[tuple[int, int]] = []
+
+        def load_tilelist(tilelist: str | Path) -> set[tuple[int, int]]:
+            tiles: set[tuple[int, int]] = set()
             with open(tilelist, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
-                    if not line: continue
+                    if not line:
+                        continue
                     x, y = map(int, line.split(","))
-                    tiles.append((x, y))
+                    tiles.add((x, y))
             return tiles
-        list_of_tiles = load_tilelist(tilelist)
 
+        list_of_tiles = load_tilelist(tilelist)
 
     dc = Datacube(env=env)
     try:

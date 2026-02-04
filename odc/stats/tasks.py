@@ -65,8 +65,12 @@ def is_tile_in(tidx: tuple[int, int], tiles: TilesRange2d) -> bool:
     x, y = tidx
     return (x0 <= x < x1) and (y0 <= y < y1)
 
-def is_tile_in_list(tidx: tuple[int, int], list_of_tiles: Iterable[tuple[int, int]]) -> bool:
+
+def is_tile_in_list(
+    tidx: tuple[int, int], list_of_tiles: Iterable[tuple[int, int]]
+) -> bool:
     return tidx in list_of_tiles
+
 
 def out_path(suffix: str, base: str) -> str:
     if base.endswith(".db"):
@@ -596,7 +600,9 @@ class SaveTasks:
         if list_of_tiles is not None:
             # prune out tiles that were not requested
             cells = {
-                tidx: cell for tidx, cell in cells.items() if is_tile_in_list(tidx, list_of_tiles)
+                tidx: cell
+                for tidx, cell in cells.items()
+                if is_tile_in_list(tidx, list_of_tiles)
             }
 
         if temporal_range is not None:
